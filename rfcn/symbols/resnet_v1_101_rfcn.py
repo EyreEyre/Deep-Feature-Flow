@@ -1,7 +1,7 @@
 # --------------------------------------------------------
 # Deep Feature Flow
 # Copyright (c) 2017 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
+# Licensed under The Apache-2.0 License [see LICENSE for details]
 # Written by Yuwen Xiong, Xizhou Zhu
 # --------------------------------------------------------
 
@@ -479,6 +479,8 @@ class resnet_v1_101_rfcn(Symbol):
         return feat_conv_3x3_relu
     
     def get_train_symbol(self, cfg):
+        # type: (object) -> object
+        # type: (object) -> object
 
         # config alias for convenient
         num_classes = cfg.dataset.NUM_CLASSES

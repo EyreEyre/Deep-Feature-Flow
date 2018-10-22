@@ -91,3 +91,6 @@ output
 model
 
 .db
+
+demo/rfcn_dff
+demo/rfcn

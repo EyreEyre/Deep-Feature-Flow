@@ -1,16 +1,10 @@
 # --------------------------------------------------------
 # Deep Feature Flow
+# Copyright (c) 2016 by Contributors
 # Copyright (c) 2017 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
+# Licensed under The Apache-2.0 License [see LICENSE for details]
 # Modified by Yuwen Xiong
 # --------------------------------------------------------
-# Based on:
-# MX-RCNN
-# Copyright (c) 2016 by Contributors
-# Licence under The Apache 2.0 License
-# https://github.com/ijkguo/mx-rcnn/
-# --------------------------------------------------------
-
 
 """A `MutableModule` implement the `BaseModule` API, and allows input shape
 varying with training iterations. If shapes vary, executors will rebind,
@@ -30,6 +24,10 @@ from mxnet import metric
 from .DataParallelExecutorGroup import DataParallelExecutorGroup
 from mxnet import ndarray as nd
 from mxnet import optimizer as opt
+
+# from .callback import callback
+import callback as nbatch_callback
+import mxnet as mx
 
 
 class Module(BaseModule):
@@ -158,7 +156,7 @@ class Module(BaseModule):
         save_optimizer_states : bool
             Whether to save optimizer states for continue training
         """
-        self._symbol.save('%s-symbol.json'%prefix)
+        self._symbol.save('%s-symbol.json'% prefix)
         param_name = '%s-%04d.params' % (prefix, epoch)
         self.save_params(param_name)
         logging.info('Saved checkpoint to \"%s\"', param_name)
@@ -575,7 +573,9 @@ class Module(BaseModule):
         if self._update_on_kvstore:
             _update_params_on_kvstore(self._exec_group.param_arrays,
                                       self._exec_group.grad_arrays,
-                                      self._kvstore)
+                                      self._kvstore,
+                                      self._param_names)
+
         else:
             _update_params(self._exec_group.param_arrays,
                            self._exec_group.grad_arrays,
@@ -864,6 +864,55 @@ class MutableModule(BaseModule):
         """
         self._curr_module.save_checkpoint(prefix, epoch, save_optimizer_states)
 
+    # updated by Eyre
+    # use epoch-nbatch to save model
+    def save_checkpoint_nbatch(self, prefix, epoch, nbatch, save_optimizer_states=False):
+        """Save current progress to checkpoint.
+        Use mx.callback.module_checkpoint as epoch_end_callback to save during training.
+
+        Parameters
+        ----------
+        prefix : str
+            The file prefix to checkpoint to
+        epoch : int
+            The current epoch number
+        save_optimizer_states : bool
+            Whether to save optimizer states for continue training
+        """
+        self._curr_module.save_checkpoint_nbatch(prefix, epoch, nbatch, save_optimizer_states)
+    # end
+
+    # def save_checkpoint(prefix, epoch, symbol, arg_params, aux_params):
+    #     """Checkpoint the model data into file.
+    #
+    #     Parameters
+    #     ----------
+    #     prefix : str
+    #         Prefix of model name.
+    #     epoch : int
+    #         The epoch number of the model.
+    #     symbol : Symbol
+    #         The input Symbol.
+    #     arg_params : dict of str to NDArray
+    #         Model parameter, dict of name to NDArray of net's weights.
+    #     aux_params : dict of str to NDArray
+    #         Model parameter, dict of name to NDArray of net's auxiliary states.
+    #     Notes
+    #     -----
+    #     - ``prefix-symbol.json`` will be saved for symbol.
+    #     - ``prefix-epoch.params`` will be saved for parameters.
+    #     """
+    #     if symbol is not None:
+    #         symbol.save('%s-symbol.json' % prefix)
+    #
+    #     save_dict = {('arg:%s' % k): v.as_in_context(cpu()) for k, v in arg_params.items()}
+    #     save_dict.update({('aux:%s' % k): v.as_in_context(cpu()) for k, v in aux_params.items()})
+    #     param_name = '%s-%04d.params' % (prefix, epoch)
+    #     nd.save(param_name, save_dict)
+    #     logging.info('Saved checkpoint to \"%s\"', param_name)
+
+
+
     def init_optimizer(self, kvstore='local', optimizer='sgd',
                        optimizer_params=(('learning_rate', 0.01),), force_init=False):
         assert self.binded and self.params_initialized
@@ -876,6 +925,16 @@ class MutableModule(BaseModule):
                                          force_init=force_init)
         self.optimizer_initialized = True
 
+    # def fit(self, train_data, eval_data=None, eval_metric='acc',
+    #         epoch_end_callback=None, batch_end_callback=None, kvstore='local',
+    #         optimizer='sgd', optimizer_params=(('learning_rate', 0.01),),
+    #         eval_end_callback=None,
+    #         eval_batch_end_callback=None, initializer=Uniform(0.01),
+    #         arg_params=None, aux_params=None, allow_missing=False,
+    #         force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
+    #         validation_metric=None, monitor=None, prefix=None):
+
+    # updated by Eyre
     def fit(self, train_data, eval_data=None, eval_metric='acc',
             epoch_end_callback=None, batch_end_callback=None, kvstore='local',
             optimizer='sgd', optimizer_params=(('learning_rate', 0.01),),
@@ -883,7 +942,8 @@ class MutableModule(BaseModule):
             eval_batch_end_callback=None, initializer=Uniform(0.01),
             arg_params=None, aux_params=None, allow_missing=False,
             force_rebind=False, force_init=False, begin_epoch=0, num_epoch=None,
-            validation_metric=None, monitor=None, prefix=None):
+            validation_metric=None, monitor=None, prefix=None, mod=None, frequence=-1,
+            means=None, stds=None):
         """Train the module parameters.
 
         Parameters
@@ -984,6 +1044,21 @@ class MutableModule(BaseModule):
                                                      locals=locals())
                     for callback in _as_list(batch_end_callback):
                         callback(batch_end_params)
+
+                # save model for every frequence
+                if nbatch % frequence == 0:
+                    nbatch_prefix = prefix + '-' + str(nbatch).zfill(8)
+                    epoch_nbatch_end_callback = [mx.callback.module_checkpoint(mod, nbatch_prefix, period=1, save_optimizer_states=True),
+                                                 nbatch_callback.do_checkpoint(nbatch_prefix, means, stds)]
+                    # sync aux params across devices
+                    arg_params, aux_params = self.get_params()
+                    self.set_params(arg_params, aux_params)
+
+                    if epoch_nbatch_end_callback is not None:
+                        for callback in _as_list(epoch_nbatch_end_callback):
+                            callback(epoch, self.symbol, arg_params, aux_params)
+                # end
+
 
             # one epoch of training is finished
             for name, val in eval_metric.get_name_value():

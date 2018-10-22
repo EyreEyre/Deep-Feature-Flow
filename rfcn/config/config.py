@@ -1,14 +1,9 @@
 # --------------------------------------------------------
 # Deep Feature Flow
-# Copyright (c) 2017 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Modified by Xizhou Zhu, Yuwen Xiong, Bin Xiao
-# --------------------------------------------------------
-# Based on:
-# MX-RCNN
 # Copyright (c) 2016 by Contributors
-# Licence under The Apache 2.0 License
-# https://github.com/ijkguo/mx-rcnn/
+# Copyright (c) 2017 Microsoft
+# Licensed under The Apache-2.0 License [see LICENSE for details]
+# Modified by Xizhou Zhu, Yuwen Xiong, Bin Xiao
 # --------------------------------------------------------
 
 import yaml

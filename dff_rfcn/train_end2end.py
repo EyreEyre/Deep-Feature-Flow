@@ -46,7 +46,7 @@ import mxnet as mx
 
 from symbols import *
 from core import callback, metric
-from core.loader import AnchorLoader
+from core.loader import PyramidAnchorIterator
 from core.module import MutableModule
 from utils.create_logger import create_logger
 from utils.load_data import load_gt_roidb, merge_roidb, filter_roidb
@@ -62,8 +62,14 @@ def train_net(args, ctx, pretrained, pretrained_flow, epoch, prefix, begin_epoch
     # load symbol
     shutil.copy2(os.path.join(curr_path, 'symbols', config.symbol + '.py'), final_output_path)
     sym_instance = eval(config.symbol + '.' + config.symbol)()
-    sym = sym_instance.get_train_symbol(config)
-    feat_sym = sym.get_internals()['rpn_cls_score_output']
+    sym = sym_instance.get_train_symbol(config, is_train=True)
+
+    # fpn
+    feat_pyramid_level = np.log2(config.network.RPN_FEAT_STRIDE).astype(int)
+    feat_pyramid_level[1] = 5
+    # feat_pyramid_level[4] = 6
+    feat_sym = [sym.get_internals()['rpn_cls_score_p' + str(x) + '_output'] for x in feat_pyramid_level]
+    # end
 
     # setup multi-gpu
     batch_size = len(ctx)
@@ -81,11 +87,11 @@ def train_net(args, ctx, pretrained, pretrained_flow, epoch, prefix, begin_epoch
     roidb = merge_roidb(roidbs)
     roidb = filter_roidb(roidb, config)
     # load training data
-    train_data = AnchorLoader(feat_sym, roidb, config, batch_size=input_batch_size, shuffle=config.TRAIN.SHUFFLE, ctx=ctx,
-                              feat_stride=config.network.RPN_FEAT_STRIDE, anchor_scales=config.network.ANCHOR_SCALES,
-                              anchor_ratios=config.network.ANCHOR_RATIOS, aspect_grouping=config.TRAIN.ASPECT_GROUPING,
-                              normalize_target=config.network.NORMALIZE_RPN, bbox_mean=config.network.ANCHOR_MEANS,
-                              bbox_std=config.network.ANCHOR_STDS)
+    # fpn
+    train_data = PyramidAnchorIterator(feat_sym, roidb, config, batch_size=input_batch_size, shuffle=config.TRAIN.SHUFFLE, ctx=ctx,
+                                       feat_strides=config.network.RPN_FEAT_STRIDE, anchor_scales=config.network.ANCHOR_SCALES,
+                                       anchor_ratios=config.network.ANCHOR_RATIOS, aspect_grouping=config.TRAIN.ASPECT_GROUPING,
+                                       allowed_border=np.inf)
 
     # infer max shape
     max_data_shape = [('data', (config.TRAIN.BATCH_IMAGES, 3, max([v[0] for v in config.SCALES]), max([v[1] for v in config.SCALES]))),
@@ -100,9 +106,12 @@ def train_net(args, ctx, pretrained, pretrained_flow, epoch, prefix, begin_epoch
     sym_instance.infer_shape(data_shape_dict)
 
     # load and initialize params
+    nbatch = 0
+    load_prefix = ''
     if config.TRAIN.RESUME:
         print('continue training from ', begin_epoch)
-        arg_params, aux_params = load_param(prefix, begin_epoch, convert=True)
+        load_prefix = prefix + '-' + str(nbatch).zfill(8)
+        arg_params, aux_params = load_param(load_prefix, begin_epoch, convert=True)
     else:
         arg_params, aux_params = load_param(pretrained, epoch, convert=True)
         arg_params_flow, aux_params_flow = load_param(pretrained_flow, epoch, convert=True)
@@ -123,7 +132,7 @@ def train_net(args, ctx, pretrained, pretrained_flow, epoch, prefix, begin_epoch
                         max_label_shapes=[max_label_shape for _ in range(batch_size)], fixed_param_prefix=fixed_param_prefix)
 
     if config.TRAIN.RESUME:
-        mod._preload_opt_states = '%s-%04d.states'%(prefix, begin_epoch)
+        mod._preload_opt_states = '%s-%04d.states'%(load_prefix, begin_epoch)
 
     # decide training params
     # metric
@@ -166,7 +175,8 @@ def train_net(args, ctx, pretrained, pretrained_flow, epoch, prefix, begin_epoch
     mod.fit(train_data, eval_metric=eval_metrics, epoch_end_callback=epoch_end_callback,
             batch_end_callback=batch_end_callback, kvstore=config.default.kvstore,
             optimizer='sgd', optimizer_params=optimizer_params,
-            arg_params=arg_params, aux_params=aux_params, begin_epoch=begin_epoch, num_epoch=end_epoch)
+            arg_params=arg_params, aux_params=aux_params, begin_epoch=begin_epoch, num_epoch=end_epoch,
+            prefix=prefix, mod=mod, frequence=100000, means=means, stds=stds)
 
 
 def main():

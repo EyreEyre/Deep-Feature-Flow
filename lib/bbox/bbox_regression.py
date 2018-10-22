@@ -1,15 +1,11 @@
 # --------------------------------------------------------
 # Deep Feature Flow
-# Copyright (c) 2017 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Modified by Yuwen Xiong
-# --------------------------------------------------------
-# Based on:
-# py-faster-rcnn
 # Copyright (c) 2016 by Contributors
-# Licence under The MIT License
-# https://github.com/rbgirshick/py-faster-rcnn
+# Copyright (c) 2017 Microsoft
+# Licensed under The Apache-2.0 License [see LICENSE for details]
+# Modified by Yuwen Xiong, from py-faster-rcnn (https://github.com/rbgirshick/py-faster-rcnn)
 # --------------------------------------------------------
+
 
 """
 This file has functions about generating bounding box regression targets

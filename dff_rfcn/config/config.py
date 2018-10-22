@@ -28,6 +28,7 @@ config.SCALES = [(600, 1000)]  # first is scale (the shorter side); second is ma
 config.default = edict()
 config.default.frequent = 20
 config.default.kvstore = 'device'
+config.default.frequence = 20
 
 # network related params
 config.network = edict()
@@ -70,6 +71,28 @@ config.TRAIN.wd = 0.0005
 config.TRAIN.begin_epoch = 0
 config.TRAIN.end_epoch = 0
 config.TRAIN.model_prefix = ''
+
+config.TRAIN.ALTERNATE = edict()
+config.TRAIN.ALTERNATE.RPN_BATCH_IMAGES = 0
+config.TRAIN.ALTERNATE.RCNN_BATCH_IMAGES = 0
+config.TRAIN.ALTERNATE.rpn1_lr = 0
+config.TRAIN.ALTERNATE.rpn1_lr_step = ''    # recommend '2'
+config.TRAIN.ALTERNATE.rpn1_epoch = 0       # recommend 3
+config.TRAIN.ALTERNATE.rfcn1_lr = 0
+config.TRAIN.ALTERNATE.rfcn1_lr_step = ''   # recommend '5'
+config.TRAIN.ALTERNATE.rfcn1_epoch = 0      # recommend 8
+config.TRAIN.ALTERNATE.rpn2_lr = 0
+config.TRAIN.ALTERNATE.rpn2_lr_step = ''    # recommend '2'
+config.TRAIN.ALTERNATE.rpn2_epoch = 0       # recommend 3
+config.TRAIN.ALTERNATE.rfcn2_lr = 0
+config.TRAIN.ALTERNATE.rfcn2_lr_step = ''   # recommend '5'
+config.TRAIN.ALTERNATE.rfcn2_epoch = 0      # recommend 8
+# optional
+config.TRAIN.ALTERNATE.rpn3_lr = 0
+config.TRAIN.ALTERNATE.rpn3_lr_step = ''    # recommend '2'
+config.TRAIN.ALTERNATE.rpn3_epoch = 0       # recommend 3
+
+
 
 # whether resume training
 config.TRAIN.RESUME = False
@@ -136,11 +159,18 @@ config.TEST.HAS_RPN = False
 config.TEST.BATCH_IMAGES = 1
 
 # RPN proposal
-config.TEST.CXX_PROPOSAL = True
-config.TEST.RPN_NMS_THRESH = 0.7
-config.TEST.RPN_PRE_NMS_TOP_N = 6000
-config.TEST.RPN_POST_NMS_TOP_N = 300
-config.TEST.RPN_MIN_SIZE = config.network.RPN_FEAT_STRIDE
+# config.TEST.CXX_PROPOSAL = True
+# config.TEST.RPN_NMS_THRESH = 0.7
+# config.TEST.RPN_PRE_NMS_TOP_N = 6000
+# config.TEST.RPN_POST_NMS_TOP_N = 300
+# config.TEST.RPN_MIN_SIZE = config.network.RPN_FEAT_STRIDE
+
+# RPN generate proposal
+config.TEST.PROPOSAL_NMS_THRESH = 0.7
+config.TEST.PROPOSAL_PRE_NMS_TOP_N = 20000
+config.TEST.PROPOSAL_POST_NMS_TOP_N = 2000
+config.TEST.PROPOSAL_MIN_SIZE = config.network.RPN_FEAT_STRIDE
+
 
 # RCNN nms
 config.TEST.NMS = 0.3

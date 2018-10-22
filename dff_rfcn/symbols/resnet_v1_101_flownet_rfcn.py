@@ -431,6 +431,7 @@ class resnet_v1_101_flownet_rfcn(Symbol):
         scale4b22_branch2c = bn4b22_branch2c
         res4b22 = mx.symbol.broadcast_add(name='res4b22', *[res4b21_relu,scale4b22_branch2c] )
         res4b22_relu = mx.symbol.Activation(name='res4b22_relu', data=res4b22 , act_type='relu')
+        
         res5a_branch1 = mx.symbol.Convolution(name='res5a_branch1', data=res4b22_relu , num_filter=2048, pad=(0,0), kernel=(1,1), stride=(1,1), no_bias=True)
         bn5a_branch1 = mx.symbol.BatchNorm(name='bn5a_branch1', data=res5a_branch1 , use_global_stats=self.use_global_stats, eps=self.eps, fix_gamma=False)
         scale5a_branch1 = bn5a_branch1
@@ -575,10 +576,12 @@ class resnet_v1_101_flownet_rfcn(Symbol):
         rpn_cls_score_reshape = mx.sym.Reshape(
             data=rpn_cls_score, shape=(0, 2, -1, 0), name="rpn_cls_score_reshape")
 
-        # classification
+        # classification loss
+        # rpn_cls_prob：[(1L, 2L, 342L, 45L)]
         rpn_cls_prob = mx.sym.SoftmaxOutput(data=rpn_cls_score_reshape, label=rpn_label, multi_output=True,
                                                normalization='valid', use_ignore=True, ignore_label=-1, name="rpn_cls_prob")
-        # bounding box regression
+        # bounding box regression loss
+        # rpn_bbox_pred: [(1L, 36L, 38L, 45L)]
         if cfg.network.NORMALIZE_RPN:
             rpn_bbox_loss_ = rpn_bbox_weight * mx.sym.smooth_l1(name='rpn_bbox_loss_', scalar=1.0, data=(rpn_bbox_pred - rpn_bbox_target))
             rpn_bbox_pred = mx.sym.Custom(
@@ -608,7 +611,7 @@ class resnet_v1_101_flownet_rfcn(Symbol):
                 rpn_pre_nms_top_n=cfg.TRAIN.RPN_PRE_NMS_TOP_N, rpn_post_nms_top_n=cfg.TRAIN.RPN_POST_NMS_TOP_N,
                 threshold=cfg.TRAIN.RPN_NMS_THRESH, rpn_min_size=cfg.TRAIN.RPN_MIN_SIZE)
 
-         # ROI proposal target
+        # ROI proposal target
         gt_boxes_reshape = mx.sym.Reshape(data=gt_boxes, shape=(-1, 5), name='gt_boxes_reshape')
         rois, label, bbox_target, bbox_weight = mx.sym.Custom(rois=rois, gt_boxes=gt_boxes_reshape,
                                                                   op_type='proposal_target',

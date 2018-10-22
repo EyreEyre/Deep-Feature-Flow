@@ -1,16 +1,3 @@
-# --------------------------------------------------------
-# Deep Feature Flow
-# Copyright (c) 2017 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Modified by Yuwen Xiong
-# --------------------------------------------------------
-# Based on:
-# py-faster-rcnn
-# Copyright (c) 2016 by Contributors
-# Licence under The MIT License
-# https://github.com/rbgirshick/py-faster-rcnn
-# --------------------------------------------------------
-
 import numpy as np
 from bbox import bbox_overlaps_cython
 
@@ -121,6 +108,11 @@ def nonlinear_pred(boxes, box_deltas):
     dy = box_deltas[:, 1::4]
     dw = box_deltas[:, 2::4]
     dh = box_deltas[:, 3::4]
+
+    # for exp explore
+    BBOX_XFORM_CLIP = np.log(1000. / 16.)
+    dw = np.minimum(dw, BBOX_XFORM_CLIP)
+    dh = np.minimum(dh, BBOX_XFORM_CLIP)
 
     pred_ctr_x = dx * widths[:, np.newaxis] + ctr_x[:, np.newaxis]
     pred_ctr_y = dy * heights[:, np.newaxis] + ctr_y[:, np.newaxis]

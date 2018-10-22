@@ -1,14 +1,9 @@
 # --------------------------------------------------------
 # Deep Feature Flow
-# Copyright (c) 2017 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Modified by Yuwen Xiong
-# --------------------------------------------------------
-# Based on:
-# MX-RCNN
 # Copyright (c) 2016 by Contributors
-# Licence under The Apache 2.0 License
-# https://github.com/ijkguo/mx-rcnn/
+# Copyright (c) 2017 Microsoft
+# Licensed under The Apache-2.0 License [see LICENSE for details]
+# Modified by Yuwen Xiong
 # --------------------------------------------------------
 
 """A `MutableModule` implement the `BaseModule` API, and allows input shape
@@ -574,7 +569,8 @@ class Module(BaseModule):
         if self._update_on_kvstore:
             _update_params_on_kvstore(self._exec_group.param_arrays,
                                       self._exec_group.grad_arrays,
-                                      self._kvstore)
+                                      self._kvstore,
+				      self._param_names)
         else:
             _update_params(self._exec_group.param_arrays,
                            self._exec_group.grad_arrays,
