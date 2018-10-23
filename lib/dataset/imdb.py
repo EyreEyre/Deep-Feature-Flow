@@ -199,6 +199,17 @@ class IMDB(object):
         self.image_set_index *= 2
         return segdb
 
+
+    # modified buy Eyre
+    def _get_widths(self):
+        return [Image.open(self.image_path_at(i)).size[0]
+                for i in xrange(self.num_images)]
+
+    def _get_heights(self):
+        return [Image.open(self.image_path_at(i)).size[1]
+                for i in xrange(self.num_images)]
+    # end
+
     def append_flipped_images(self, roidb):
         """
         append flipped images to an roidb
@@ -208,13 +219,49 @@ class IMDB(object):
         """
         print 'append flipped images to roidb'
         assert self.num_images == len(roidb)
+
+        # modified by Eyre
+        # add to get image height
+        widths = self._get_widths()
+        heights = self._get_heights()
+        # end
+
         for i in range(self.num_images):
             roi_rec = roidb[i]
             boxes = roi_rec['boxes'].copy()
             oldx1 = boxes[:, 0].copy()
             oldx2 = boxes[:, 2].copy()
+
+            # modified by Eyre
+            # print image name
+            # print(self.image_index[i])
+            # assert that ymin<=ymax
+            assert (boxes[:, 1] <= boxes[:, 3]).all()
+            # assert ymin>=0,for 0-based
+            assert (boxes[:, 1] >= 0).all()
+            # assert ymax<height[i],for 0-based
+            assert (boxes[:, 3] < heights[i]).all()
+            # assert xmax<withd[i],for 0-based
+            assert (oldx2 < widths[i]).all()
+            # assert xmin>=0, for 0-based
+            assert (oldx1 >= 0).all()
+            # assert xmax>=xmin, for 0-based
+            assert (oldx2 >= oldx1).all()
+            # end
+
             boxes[:, 0] = roi_rec['width'] - oldx2 - 1
             boxes[:, 2] = roi_rec['width'] - oldx1 - 1
+
+            # modified by Eyre
+            # print("num_image:%d" % (i))
+            # if i == 9400:
+            #     print(self.image_index[i])
+            #     for z in xrange(len(boxes)):
+            #         print ('x2:%d  x1:%d' % (boxes[z][2], boxes[z][0]))
+            #         if boxes[z][2] < boxes[z][0]:
+            #             print"here is the bad point!!!"
+            # end
+
             assert (boxes[:, 2] >= boxes[:, 0]).all()
             entry = roi_rec.copy()
             entry['boxes'] = boxes

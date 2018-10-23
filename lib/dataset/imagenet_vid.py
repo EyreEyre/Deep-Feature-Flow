@@ -144,7 +144,11 @@ class ImageNetVID(IMDB):
         objs = tree.findall('object')
         num_objs = len(objs)
 
-        boxes = np.zeros((num_objs, 4), dtype=np.uint16)
+        # modified by Eyre
+        boxes = np.zeros((num_objs, 4), dtype=np.int16)
+        # end
+
+        # boxes = np.zeros((num_objs, 4), dtype=np.uint16)
         gt_classes = np.zeros((num_objs), dtype=np.int32)
         overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
         valid_objs = np.zeros((num_objs), dtype=np.bool)
@@ -158,6 +162,12 @@ class ImageNetVID(IMDB):
             y1 = np.maximum(float(bbox.find('ymin').text), 0)
             x2 = np.minimum(float(bbox.find('xmax').text), roi_rec['width']-1)
             y2 = np.minimum(float(bbox.find('ymax').text), roi_rec['height']-1)
+
+            # modified by Eyre
+            # x2 = np.minimum(float(bbox.find('xmax').text), roi_rec['width'])
+            # y2 = np.minimum(float(bbox.find('ymax').text), roi_rec['height'])
+            # end
+
             if not class_to_index.has_key(obj.find('name').text):
                 continue
             valid_objs[ix] = True

@@ -2,7 +2,7 @@
 MXNET_VERSION: "mxnet"
 output_path: "./output/dff_rfcn/imagenet_vid"
 symbol: resnet_v1_101_flownet_rfcn
-gpus: '0,1,2,3'
+gpus: '8'
 CLASS_AGNOSTIC: true
 SCALES:
 - 600
@@ -58,6 +58,7 @@ dataset:
   proposal: rpn
 TRAIN:
   lr: 0.00025
+#  lr: 3.125e-5
   lr_step: '1.333'
   warmup: false
   begin_epoch: 0
@@ -66,6 +67,7 @@ TRAIN:
   # whether resume training
   RESUME: false
   # whether flip image
+  # FLIP: true
   FLIP: true
   # whether shuffle image
   SHUFFLE: true

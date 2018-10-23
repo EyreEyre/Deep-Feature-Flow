@@ -2,12 +2,12 @@
 # Deep Feature Flow
 # Copyright (c) 2015 Microsoft
 # Licensed under The MIT License
-# Written by Yuwen Xiong
+# Written by Yuwen Xiong, Tao Kong
 # ------------------------------------------------------------------
 # Based on:
 # Faster R-CNN
 # Copyright (c) 2015 Microsoft
-## Licensed under The MIT License
+# Licensed under The MIT License
 # https://github.com/shaoqingren/faster_rcnn
 # ------------------------------------------------------------------
 

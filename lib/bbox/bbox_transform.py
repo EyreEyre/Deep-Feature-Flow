@@ -90,6 +90,18 @@ def nonlinear_transform(ex_rois, gt_rois):
     gt_ctr_x = gt_rois[:, 0] + 0.5 * (gt_widths - 1.0)
     gt_ctr_y = gt_rois[:, 1] + 0.5 * (gt_heights - 1.0)
 
+    # modified by Eyre
+    # print('gt_widths', gt_widths)
+    # print('ex_widths', ex_widths)
+    # print('gt_heights', gt_heights)
+    # print('ex_heights', ex_heights)
+    assert (gt_widths > 0).all()
+    assert (gt_heights > 0).all()
+    assert (ex_widths > 0).all()
+    assert (ex_heights > 0).all()
+    # end
+
+
     targets_dx = (gt_ctr_x - ex_ctr_x) / (ex_widths + 1e-14)
     targets_dy = (gt_ctr_y - ex_ctr_y) / (ex_heights + 1e-14)
     targets_dw = np.log(gt_widths / ex_widths)

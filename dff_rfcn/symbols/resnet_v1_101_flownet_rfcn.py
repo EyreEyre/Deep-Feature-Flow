@@ -475,7 +475,7 @@ class resnet_v1_101_flownet_rfcn(Symbol):
         res5c_relu = mx.symbol.Activation(name='res5c_relu', data=res5c , act_type='relu')
 
         feat_conv_3x3 = mx.sym.Convolution(
-            data=res5c_relu, kernel=(3, 3), pad=(6, 6), dilate=(6, 6), num_filter=1024, name="feat_conv_3x3")
+            data=res5c_relu, kernel=(3, 3), pad=(6, 6), dilate=(6, 6), num_filter=1536, name="feat_conv_3x3")
         feat_conv_3x3_relu = mx.sym.Activation(data=feat_conv_3x3, act_type="relu", name="feat_conv_3x3_relu")
         return feat_conv_3x3_relu
 
@@ -534,9 +534,40 @@ class resnet_v1_101_flownet_rfcn(Symbol):
         Convolution5 = mx.symbol.Convolution(name='Convolution5', data=Concat5 , num_filter=2, pad=(1,1), kernel=(3,3), stride=(1,1), no_bias=False)
 
         Convolution5_scale_bias = mx.sym.Variable(name='Convolution5_scale_bias', lr_mult=0.0)
-        Convolution5_scale = mx.symbol.Convolution(name='Convolution5_scale', data=Concat5 , num_filter=1024, pad=(0,0), kernel=(1,1), stride=(1,1),
+        Convolution5_scale = mx.symbol.Convolution(name='Convolution5_scale', data=Concat5 , num_filter=1536, pad=(0,0), kernel=(1,1), stride=(1,1),
                                                    bias=Convolution5_scale_bias, no_bias=False)
         return Convolution5 * 2.5, Convolution5_scale
+
+
+    def get_roi_feature(self, data, rois, feat_dim):
+        '''
+        spatial_scale: 1 / 16 = 0.0625
+        return: 1 * 40 * 7 * 7 roi feature
+        '''
+
+        conv_1x1 = mx.symbol.Convolution(data=data, kernel=(1, 1), pad=(1, 1), stride=(1, 1), num_filter=feat_dim, name='conv_1x1')
+        roi_pool = mx.symbol.ROIPooling(data=conv_1x1, roi=rois, pool_size=(7, 7), spatial_scale=0.0625, name='roi_pooling')
+
+        return roi_pool
+
+    def get_shifted_convs_feature(self, data, feat_dim):
+        '''
+        shifted convs direction is random.
+        :param data: resnet conv5 output
+        :param feat_dim: shifted_conv channel
+        :return: deformable convs feature map
+        '''
+
+        shifted_conv_offset = mx.symbol.Convolution(data=data, num_filter=3*3*2*1, pad=(2, 2), kernel=(3, 3), dilate=(2, 2),
+                                            cudnn_off=True, name='shifted_conv_offset')
+        shifted_conv = mx.contrib.symbol.DeformableConvolution(data=data, offset=shifted_conv_offset, num_filter=feat_dim, pad=(2, 2),
+                                                               kernel=(3, 3), num_deformable_group=1, stride=(1, 1), dilate=(2, 2),
+                                                               no_bias=True, name='shifted_conv')
+
+
+        return shifted_conv
+
+
 
     def get_train_symbol(self, cfg):
 
@@ -562,9 +593,9 @@ class resnet_v1_101_flownet_rfcn(Symbol):
         warp_conv_feat = warp_conv_feat * scale_map
         select_conv_feat = mx.sym.take(mx.sym.Concat(*[warp_conv_feat, conv_feat], dim=0), eq_flag)
 
-        conv_feats = mx.sym.SliceChannel(select_conv_feat, axis=1, num_outputs=2)
+        conv_feats = mx.sym.SliceChannel(select_conv_feat, axis=1, num_outputs=3)
 
-        # RPN layers
+        ################# RPN layers #######################
         rpn_feat = conv_feats[0]
         rpn_cls_score = mx.sym.Convolution(
             data=rpn_feat, kernel=(1, 1), pad=(0, 0), num_filter=2 * num_anchors, name="rpn_cls_score")
@@ -617,20 +648,88 @@ class resnet_v1_101_flownet_rfcn(Symbol):
                                                                   batch_rois=cfg.TRAIN.BATCH_ROIS,
                                                                   cfg=cPickle.dumps(cfg),
                                                                   fg_fraction=cfg.TRAIN.FG_FRACTION)
+        # roi_feat = conv_feats[1]
+        # rfcn_feat = conv_feats[1]
 
-        # res5
-        rfcn_feat = conv_feats[1]
-        rfcn_cls = mx.sym.Convolution(data=rfcn_feat, kernel=(1, 1), num_filter=7*7*num_classes, name="rfcn_cls")
-        rfcn_bbox = mx.sym.Convolution(data=rfcn_feat, kernel=(1, 1), num_filter=7*7*4*num_reg_classes, name="rfcn_bbox")
-        psroipooled_cls_rois = mx.contrib.sym.PSROIPooling(name='psroipooled_cls_rois', data=rfcn_cls, rois=rois, group_size=7,pooled_size=7,
-                                                   output_dim=num_classes, spatial_scale=0.0625)
-        psroipooled_loc_rois = mx.contrib.sym.PSROIPooling(name='psroipooled_loc_rois', data=rfcn_bbox, rois=rois, group_size=7,pooled_size=7,
-                                                   output_dim=8, spatial_scale=0.0625)
-        cls_score = mx.sym.Pooling(name='ave_cls_scors_rois', data=psroipooled_cls_rois, pool_type='avg', global_pool=True, kernel=(7, 7))
-        bbox_pred = mx.sym.Pooling(name='ave_bbox_pred_rois', data=psroipooled_loc_rois, pool_type='avg', global_pool=True, kernel=(7, 7))
-        cls_score = mx.sym.Reshape(name='cls_score_reshape', data=cls_score, shape=(-1, num_classes))
-        bbox_pred = mx.sym.Reshape(name='bbox_pred_reshape', data=bbox_pred, shape=(-1, 4 * num_reg_classes))
+        ############### roi feature ####################
+        roi_feat = conv_feats[1]
+        feat_dim = 40
+        roi_conv = mx.symbol.Convolution(data=roi_feat, kernel=(1, 1), pad=(0, 0), stride=(1, 1), num_filter=feat_dim, name='roi_conv')
+        roi_feature = mx.symbol.ROIPooling(data=roi_conv, rois=rois, pooled_size=(7, 7), spatial_scale=0.0625, name='roi_feat_pooling')
 
+        ############### R-FCN #########################
+        rfcn_feat = conv_feats[2]
+
+        # rfcn_dcn
+        # # rfcn_sub_region
+        # rfcn_sub_region = mx.sym.Convolution(data=rfcn_feat, kernel=(3, 3),  pad=(1, 1), stride=(1, 1),
+        #                                      num_filter=3 * 3 * feat_dim, name="rfcn_sub_region")
+        #
+        # # trans_rfcn_sub_region
+        # # a group of shifted convs
+        # rfcn_sub_region_offset_t = mx.sym.Convolution(data=rfcn_feat, kernel=(3, 3),  pad=(1, 1), stride=(1, 1),
+        #                                               num_filter=2 * 3 * 3 * feat_dim, name="rfcn_sub_region_offset_t")
+        #
+        # rfcn_sub_region_offset = mx.contrib.sym.DeformablePSROIPooling(data=rfcn_sub_region_offset_t, rois=rois, group_size=7, pooled_size=7,
+        #                                                                sample_per_part=4, no_trans=True, part_size=7, output_dim=2 * feat_dim,
+        #                                                                spatial_scale=0.0625, name='rfcn_sub_region_offset')
+        # psroipooled_sub_region_rois = mx.contrib.sym.DeformablePSROIPooling(data=rfcn_sub_region, rois=rois, trans=rfcn_sub_region_offset, group_size=7,
+        #                                                                     pooled_size=7, sample_per_part=4, no_trans=False, trans_std=0.1, output_dim=feat_dim,
+        #                                                                     spatial_scale=0.0625, part_size=7, name='psroipooled_sub_region_rois')
+        # end
+
+        # rcnn_dcn
+        # rfcn_sub_region
+        # add deformable covs
+        # res5a_branch2b_offset = mx.symbol.Convolution(name='res5a_branch2b_offset', data=res5a_branch2a_relu,
+        #                                               num_filter=72, pad=(2, 2), kernel=(3, 3), stride=(1, 1),
+        #                                               dilate=(2, 2), cudnn_off=True)
+        # res5a_branch2b = mx.contrib.symbol.DeformableConvolution(name='res5a_branch2b', data=res5a_branch2a_relu,
+        #                                                          offset=res5a_branch2b_offset,
+        #                                                          num_filter=512, pad=(2, 2), kernel=(3, 3),
+        #                                                          num_deformable_group=4,
+        #                                                          stride=(1, 1), dilate=(2, 2), no_bias=True)
+
+
+        rfcn_sub_region_conv_offset = mx.sym.Convolution(data=rfcn_feat, kernel=(3, 3), pad=(2, 2), stride=(1, 1),
+                                                         dilate=(2, 2), num_filter=3 * 3 * 1 * 2, name="rfcn_sub_region_conv_offset")
+        rfcn_sub_region_conv = mx.contrib.symbol.DeformableConvolution(data=rfcn_feat, offset=rfcn_sub_region_conv_offset,
+                                                                       num_filter=3 * 3 * feat_dim, pad=(2, 2), kernel=(3, 3),
+                                                                       num_deformable_group=1, stride=(1, 1), dilate=(2, 2),
+                                                                       no_bias=True, name='rfcn_sub_region_conv')
+
+        # trans_rfcn_sub_region
+        # a group of shifted convs
+        rfcn_sub_region_offset_t = mx.sym.Convolution(data=rfcn_feat, kernel=(1, 1), pad=(0, 0), stride=(1, 1),
+                                                      num_filter=2 * 7 * 7 * feat_dim, name="rfcn_sub_region_offset_t")
+
+        rfcn_sub_region_offset = mx.contrib.sym.DeformablePSROIPooling(data=rfcn_sub_region_offset_t, rois=rois,
+                                                                       group_size=7, pooled_size=7,
+                                                                       sample_per_part=4, no_trans=True, part_size=7,
+                                                                       output_dim=2 * feat_dim,
+                                                                       spatial_scale=0.0625,
+                                                                       name='rfcn_sub_region_offset')
+        psroipooled_sub_region_rois = mx.contrib.sym.DeformablePSROIPooling(data=rfcn_sub_region_conv, rois=rois,
+                                                                            trans=rfcn_sub_region_offset, group_size=7,
+                                                                            pooled_size=7, sample_per_part=4,
+                                                                            no_trans=False, trans_std=0.1,
+                                                                            output_dim=feat_dim,
+                                                                            spatial_scale=0.0625, part_size=7,
+                                                                            name='psroipooled_sub_region_rois')
+
+        # sub_region_roi_feature = mx.sym.Pooling(name='max_sub_region_rois', data=psroipooled_sub_region_rois, pool_type='max', global_pool=True, kernel=(7, 7))
+
+        ############### feature aggregation #########################
+        agg_feature = mx.symbol.ElementWiseSum(*[roi_feature, psroipooled_sub_region_rois], name='agg_feature')
+
+        ############### cls score and bbox regression #########################
+        # 500-d fc, (cls+1)-d fc, 4-d fc
+        fc_new_1 = mx.symbol.FullyConnected(data=agg_feature, num_hidden=500, name='fc_new_1')
+        fc_new_1_relu = mx.symbol.Activation(data=fc_new_1, act_type='relu', name='fc_new_1_relu')
+
+        # cls_score/bbox_pred
+        cls_score = mx.symbol.FullyConnected(data=fc_new_1_relu, num_hidden=num_classes, name='cls_score')
+        bbox_pred = mx.symbol.FullyConnected(data=fc_new_1_relu, num_hidden=4 * num_reg_classes, name='bbox_pred')
 
         # classification
         if cfg.TRAIN.ENABLE_OHEM:
@@ -893,6 +992,27 @@ class resnet_v1_101_flownet_rfcn(Symbol):
         self.sym = group
         return group
 
+    def init_weight_rfcn(self, cfg, arg_params, aux_params):
+        # roi feature init
+        arg_params['roi_conv_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['roi_conv_weight'])
+        arg_params['roi_conv_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['roi_conv_bias'])
+
+        # sub_region init
+        arg_params['rfcn_sub_region_conv_offset_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['rfcn_sub_region_conv_offset_weight'])
+        arg_params['rfcn_sub_region_conv_offset_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['rfcn_sub_region_conv_offset_bias'])
+        arg_params['rfcn_sub_region_conv_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['rfcn_sub_region_conv_weight'])
+        # arg_params['rfcn_sub_region_conv_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['rfcn_sub_region_conv_bias'])
+        arg_params['rfcn_sub_region_offset_t_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['rfcn_sub_region_offset_t_weight'])
+        arg_params['rfcn_sub_region_offset_t_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['rfcn_sub_region_offset_t_bias'])
+
+        # fc init
+        arg_params['fc_new_1_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['fc_new_1_weight'])
+        arg_params['fc_new_1_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['fc_new_1_bias'])
+        arg_params['cls_score_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['cls_score_weight'])
+        arg_params['cls_score_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['cls_score_bias'])
+        arg_params['bbox_pred_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['bbox_pred_weight'])
+        arg_params['bbox_pred_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['bbox_pred_bias'])
+
     def init_weight(self, cfg, arg_params, aux_params):
         arg_params['Convolution5_scale_weight'] = mx.nd.zeros(shape=self.arg_shape_dict['Convolution5_scale_weight'])
         arg_params['Convolution5_scale_bias'] = mx.nd.ones(shape=self.arg_shape_dict['Convolution5_scale_bias'])
@@ -905,7 +1025,4 @@ class resnet_v1_101_flownet_rfcn(Symbol):
         arg_params['rpn_bbox_pred_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['rpn_bbox_pred_weight'])
         arg_params['rpn_bbox_pred_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['rpn_bbox_pred_bias'])
 
-        arg_params['rfcn_cls_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['rfcn_cls_weight'])
-        arg_params['rfcn_cls_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['rfcn_cls_bias'])
-        arg_params['rfcn_bbox_weight'] = mx.random.normal(0, 0.01, shape=self.arg_shape_dict['rfcn_bbox_weight'])
-        arg_params['rfcn_bbox_bias'] = mx.nd.zeros(shape=self.arg_shape_dict['rfcn_bbox_bias'])
+        self.init_weight_rfcn(cfg, arg_params, aux_params)
